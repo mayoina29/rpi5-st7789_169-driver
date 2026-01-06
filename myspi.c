@@ -4,11 +4,17 @@
 #include <linux/spi/spi.h>
 #include <linux/gpio/consumer.h>
 #include <linux/delay.h>
+#include <linux/fs.h>
+#include <linux/miscdevice.h>
+#include <linux/uaccess.h>
+
 
 struct myspi_dev {
     struct spi_device *spi;
     struct gpio_desc *reset_gpio;
     struct gpio_desc *dc_gpio;
+    struct miscdevice miscdev;
+    char kbuf[32];
 };
 
 static void write_command(struct myspi_dev *dev, u8 cmd){
@@ -103,6 +109,48 @@ static void st7789_fill(struct myspi_dev *dev, u16 color){
     }
 }
 
+static int myspi_open(struct inode *inode, struct file *file){
+        struct myspi_dev *dev = container_of(file->private_data, struct myspi_dev, miscdev);
+
+        file->private_data = dev;
+
+        pr_info("ST7789V2: Device opened\n");
+        return 0;
+}
+
+static ssize_t myspi_write(struct file *file, const char __user *user_buf, size_t count, loff_t *ppos){
+        struct myspi_dev *dev = file->private_data;
+        int ret;
+
+        //버퍼 오버 플로우 방지 
+        if(count >= sizeof(dev->kbuf)) count = sizeof(dev->kbuf) -1;
+
+        //유저 공간의 데이터를 커널 공간으로 복사 
+        ret = copy_from_user(dev->kbuf, user_buf, count);
+        if (ret) return -EFAULT;
+
+        dev->kbuf[count] = '\0';
+
+        if(dev->kbuf[count-1] == '\n') dev->kbuf[count-1] = '\0';
+
+        pr_info("ST7789V2: User wrote: %s\n", dev->kbuf);
+
+        if (strcmp(dev->kbuf, "red") ==0) st7789_fill(dev, 0xF800);
+        else if (strcmp(dev->kbuf, "green") == 0) st7789_fill(dev, 0x07E0);
+        else if (strcmp(dev->kbuf, "bule") == 0) st7789_fill(dev, 0x001F);
+        else if (strcmp(dev->kbuf, "white") == 0) st7789_fill(dev, 0xFFFF);
+        else if (strcmp(dev->kbuf, "black") == 0) st7789_fill(dev, 0x0000);
+        else if (strcmp(dev->kbuf, "natsuki") == 0) st7789_fill(dev, 0xFA8D);
+        else pr_info("ST7789: Unknown command\n");
+
+        return count;
+}
+
+static const struct file_operations myspi_fops = {
+       .owner = THIS_MODULE,
+       .open = myspi_open,
+       .write = myspi_write,
+};
 
 static int myspi_prove(struct spi_device *spi){
         struct myspi_dev *dev;
@@ -142,16 +190,29 @@ static int myspi_prove(struct spi_device *spi){
 
         st7789_init(dev);
         
-        pr_info("ST7789V2: Paninting Screen with #FE5069 (0xFA8D)...\n");
+        //pr_info("ST7789V2: Paninting Screen with #FE5069 (0xFA8D)...\n");
 
-        st7789_fill(dev, 0xFA8D);
+        //st7789_fill(dev, 0xFA8D);
 
-        pr_info("ST7789V2: Painting Done\n");
+        //pr_info("ST7789V2: Painting Done\n");
 
+        dev->miscdev.minor = MISC_DYNAMIC_MINOR;
+        dev->miscdev.name = "st7789";
+        dev->miscdev.fops = &myspi_fops;
+        dev->miscdev.parent = &spi->dev;
+
+        if (misc_register(&dev->miscdev)){
+            pr_err("ST7789: Failed to register misc device\n");
+            return -EBUSY;
+        }
+        pr_info("ST7789V2: Created /dev/st7789 successfully!\n");
         return 0;
 }
 
 static void myspi_remove(struct spi_device *spi){
+    struct myspi_dev *dev = spi_get_drvdata(spi);
+    misc_deregister(&dev->miscdev);
+
 	pr_info("ST7789V2_169: Removing driver... Goodbye!\n");
 }
 
