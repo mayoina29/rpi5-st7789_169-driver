@@ -11,6 +11,52 @@ struct myspi_dev {
     struct gpio_desc *dc_gpio;
 };
 
+static void write_command(struct myspi_dev *dev, u8 cmd){
+    gpiod_set_value(dev->dc_gpio, 0);
+
+    spi_write(dev->spi, &cmd, 1);
+}
+
+static void write_data(struct myspi_dev *dev, u8 data){
+    gpiod_set_value(dev->dc_gpio, 1);
+
+    spi_write(dev->spi, &data, 1);
+}
+
+static void st7789_init(struct myspi_dev *dev){
+        
+        pr_info("ST7789V2: Sending initialization commands...\n");
+
+        // SWRESET (0x01): 소프트웨어 리셋
+        write_command(dev, 0x01);
+        msleep(150);
+
+        // SLPOUT (0x11): Sleep Out 
+        write_command(dev, 0x11);
+        msleep(255);
+    
+        //COLMOD (0x3A): 컬러모드 설정 
+        write_command(dev, 0x3A);
+        write_data(dev, 0x55);
+
+        // MADCTL (0x36): 화면 방향 설정 
+        write_command(dev, 0x36);
+        write_data(dev, 0x00); // 0x00 = 정방향 (필요시 0x60, 0xC0 등으로 변경)
+
+        // INVON (0x21): 색상 반전 켜기 (IPS 패널 특성상 반전이 필요할 수 있음
+        // 화면이 색반전되면 이걸 주석처리하거나 INVOFF(0x20) 을 사용하자 
+        write_command(dev, 0x21);
+
+        // NORON (0x13): Normal Display Mode on 
+        write_command(dev, 0x13);
+
+        // DISPON (0x29): Display ON 
+        write_command(dev, 0x29);
+
+        pr_info("ST7789V2: Initialization done. Display should be On \n");
+}
+
+
 static int myspi_prove(struct spi_device *spi){
         struct myspi_dev *dev;
 
@@ -45,7 +91,9 @@ static int myspi_prove(struct spi_device *spi){
         gpiod_set_value(dev->reset_gpio, 1);
         msleep(150);
 
-        pr_info("ST7789V2: Initialization sequence finished. LCD is ready!\n");
+        //pr_info("ST7789V2: Initialization sequence finished. LCD is ready!\n");
+
+        st7789_init(dev);
 
         return 0;
 }
