@@ -56,6 +56,53 @@ static void st7789_init(struct myspi_dev *dev){
         pr_info("ST7789V2: Initialization done. Display should be On \n");
 }
 
+static void st7789_set_window(struct myspi_dev *dev, u16 x_start, u16 y_start, u16 x_end, u16 y_end){
+
+        int y_offset =20;
+
+        y_start += y_offset;
+        y_end += y_offset;
+
+        // CASET (0x2A) x 좌표 (열) 설정
+        write_command(dev, 0x2A);
+        write_data(dev, x_start >> 8);
+        write_data(dev, x_start & 0xFF);
+        write_data(dev, x_end >> 8);
+        write_data(dev, x_end & 0xFF);
+        
+        // RASET (0x2B: y좌표 (행) 설정
+        write_command(dev, 0x2B);
+        write_data(dev, y_start >> 8);
+        write_data(dev, y_start & 0xFF);
+        write_data(dev, y_end >> 8);
+        write_data(dev, y_end & 0xFF);
+
+        // RAMWR (0x2C) 메모리 쓰기 시작 알림 
+        write_command(dev, 0x2C);
+}
+
+static void st7789_fill(struct myspi_dev *dev, u16 color){
+    int i;
+
+    int width = 240;
+    int height = 280;
+
+    u8 color_hi = color >> 8;
+    u8 color_lo = color & 0xFF;
+
+    //전체화면 영역 잡기 
+    st7789_set_window(dev, 0,0, width -1, height -1);
+    
+    // DC 핀을 High(데이터 모드)로 고정 
+    gpiod_set_value(dev->dc_gpio, 1);
+
+    //픽셀 하나하나 색칠하기 (나중에 최적화 일단 확인을 위해 반복)
+    for (i =0; i < width * height; i++){
+        spi_write(dev->spi, &color_hi, 1);
+        spi_write(dev->spi, &color_lo, 1);
+    }
+}
+
 
 static int myspi_prove(struct spi_device *spi){
         struct myspi_dev *dev;
@@ -94,6 +141,12 @@ static int myspi_prove(struct spi_device *spi){
         //pr_info("ST7789V2: Initialization sequence finished. LCD is ready!\n");
 
         st7789_init(dev);
+        
+        pr_info("ST7789V2: Paninting Screen with #FE5069 (0xFA8D)...\n");
+
+        st7789_fill(dev, 0xFA8D);
+
+        pr_info("ST7789V2: Painting Done\n");
 
         return 0;
 }
