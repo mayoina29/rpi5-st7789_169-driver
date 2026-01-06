@@ -1,4 +1,4 @@
-/dts-v1/;
+/ts-v1/;
 /plugin/;
 
 / {
@@ -18,6 +18,9 @@
                 spi-max-frequency = <32000000>;
                 rotate = <90>;
                 fps = <60>;
+
+                reset-gpios = <&gpio 27 0>;
+                dc-gpios = <&gpio 25 0>;
             };
         };
     };
